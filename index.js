@@ -14,11 +14,36 @@ function generateTrackingId() {
 }
 
 
+// firebase
+
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./zapshift-firebase-adminsdk.json");
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+
 
 // middleWere 
 cors = require('cors')
 app.use(express.json())
 app.use(cors())
+const verifyFBToken = async (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
+    const token = authorization.split(' ')[1]
+    try {
+        const decoded = await admin.auth().verifyIdToken(token)
+        req.token_email = decoded.email;
+        next()
+    } catch (error) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
+}
 
 // mongodb 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -34,10 +59,29 @@ const client = new MongoClient(uri, {
 
 const run = async () => {
     try {
-        await client.connect();
         const ZapShiftDB = client.db('ZapShiftDB');
+        const usersColl = ZapShiftDB.collection('users')
         const parcelsColl = ZapShiftDB.collection('ParcelColl')
         const paymentCollection = ZapShiftDB.collection('payments')
+
+
+        //user
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            const { email } = user;
+            const existUser = await usersColl.findOne({ email })
+            if (existUser) {
+                return res.send({ message: 'user already exist' })
+            }
+            user.roll = 'user';
+            user.createdAt = new Date();
+            const result = await usersColl.insertOne(user);
+            res.send(result)
+        })
+        app.get('/users', async (req, res) => {
+            const result = await usersColl.find().toArray();
+            res.send(result)
+        })
 
         // get all parcel 
         app.get('/parcel', async (req, res) => {
@@ -182,13 +226,19 @@ const run = async () => {
             res.send({ success: false })
         })
 
-        app.get('/payments', async (req, res) => {
+        app.get('/payments', verifyFBToken, async (req, res) => {
+
             const { email } = req.query;
             const query = {}
             if (email) {
+                if (email !== req.token_email) {
+                    return res.status(403).send({ message: 'forbidden access' })
+                }
                 query.customerEmail = email;
             }
-            const result = await paymentCollection.find(query).toArray();
+            const result = await paymentCollection.find(query).sort({
+                paidAt: -1
+            }).toArray();
             res.send(result)
         })
 
