@@ -61,6 +61,7 @@ const run = async () => {
     try {
         const ZapShiftDB = client.db('ZapShiftDB');
         const usersColl = ZapShiftDB.collection('users')
+        const riderColl = ZapShiftDB.collection('riders')
         const parcelsColl = ZapShiftDB.collection('ParcelColl')
         const paymentCollection = ZapShiftDB.collection('payments')
 
@@ -80,6 +81,50 @@ const run = async () => {
         })
         app.get('/users', async (req, res) => {
             const result = await usersColl.find().toArray();
+            res.send(result)
+        })
+
+
+        // get rider 
+        app.get('/riders', async (req, res) => {
+            const result = await riderColl.find().toArray();
+            res.send(result)
+        })
+
+        // post rider 
+        app.post('/riders', async (req, res) => {
+            const rider = req.body;
+            rider.status = 'pending';
+            rider.submitedAt = new Date();
+            const result = await riderColl.insertOne(rider);
+            res.send(result)
+        })
+
+        // approve as a rider 
+        app.patch('/riders/:id', async (req, res) => {
+            const { id } = req.params;
+            const query = { _id: new ObjectId(id) }
+            const update = {
+                $set: { status: 'approved' }
+            }
+            const result = await riderColl.updateOne(query, update)
+
+            // update user role as rider
+            const { email } = req.body;
+
+            const updateRol = await usersColl.updateOne({ email }, {
+                $set: {
+                    roll: 'rider'
+                }
+            })
+
+            res.send(result)
+        })
+
+        //delete riders
+        app.delete('/riders/:id', async (req, res) => {
+            const { id } = req.params;
+            const result = await riderColl.deleteOne({ _id: new ObjectId(id) })
             res.send(result)
         })
 
